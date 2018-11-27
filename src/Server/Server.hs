@@ -1,40 +1,33 @@
 {-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
 
 module Server.Server where
 
-import Control.Monad (void)
-import Control.Monad.IO.Class (liftIO)
-import Data.ByteString.Char8 (pack)
+import Control.Concurrent.Async
+import Control.Concurrent.STM
+import Control.Concurrent.STM.TBChan
+import Control.Monad (forever, void)
+import Control.Monad.IO.Class (liftIO, MonadIO)
 import Data.Text (Text)
-import Data.Time (UTCTime)
 import Message.Message
-import Network.HTTP.Types (ok200)
-import Network.Wai (responseLBS)
 import Network.Wai.Handler.Warp as Warp
-import Network.Wai.Handler.WarpTLS
 import Servant
 import Server.Api
-import System.Environment
-import Control.Concurrent.STM
 
 server :: STM (Mlist Message) -> Server Api
-server ml =
+server mlist =
   addMessagePostH
   where
-    addMessagePostH msg = liftIO $ messagePost ml msg
+    addMessagePostH msg = liftIO $ messagePost mlist msg
 
     messagePost :: STM (Mlist Message) -> Text -> IO Bool
     messagePost ml msg = do
       chan <-
         atomically $ do
-          mlist <- ml
-          void $ addMessage mlist (Message msg Info)
-          pure mlist
+          channel <- ml
+          void $ addMessage channel (Message msg Info)
+          pure channel
       runner chan
       pure True
 
@@ -48,3 +41,26 @@ run :: IO ()
 run = Warp.run 4000 =<< mkApp
 
 
+addMessage :: Mlist Message -> Message -> STM ()
+addMessage ml = writeTBChan (runMlist ml)
+
+readMessage :: Mlist Message -> STM Message
+readMessage ml = readTBChan (runMlist ml)
+
+class HasMlist a where
+  addMsg :: MonadIO m => Mlist a -> a -> m ()
+  readMsg :: MonadIO m => Mlist a -> m a
+
+instance HasMlist (Mlist a) where
+  addMsg ml msg = liftIO (atomically $ writeTBChan (runMlist ml) msg)
+  readMsg ml    = liftIO (atomically $ readTBChan (runMlist ml))
+--
+createMlist :: STM (Mlist Message)
+createMlist = do
+  chan <- newTBChan 1000000
+  pure $ Mlist chan
+
+runner :: Mlist Message -> IO ()
+runner ml = void $ async $ forever $ do
+  msg <- atomically $ readMessage ml -- this is where we send message out
+  print msg

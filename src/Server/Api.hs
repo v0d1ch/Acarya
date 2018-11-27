@@ -8,8 +8,6 @@ module Server.Api where
 
 import Data.Proxy
 import Data.Text
-import Data.Time (UTCTime)
-import Message.Message
 import Servant.API
 
 type Api =
