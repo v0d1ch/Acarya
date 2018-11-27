@@ -1,4 +1,6 @@
-{-# LANGUAGE InstanceSigs      #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE InstanceSigs        #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Message.Message where
 
@@ -8,33 +10,38 @@ import Control.Monad.IO.Class
 import Data.HashMap.Lazy
 import Data.Text (Text)
 
-type Message = Text
+data Message =
+  Message
+  { body :: Text
+  } deriving (Eq, Show)
 
-newtype Mlist m a = Mlist { runMlist :: m (TBChan a) }
+newtype Mlist a = Mlist { runMlist :: (TBChan a) }
 
-addMessage :: MonadIO m => Mlist m Message -> Message -> m ()
-addMessage ml msg = do
-  l <- runMlist ml
-  liftIO $ atomically $ writeTBChan l msg
+addMessage :: Mlist Message -> Message -> STM ()
+addMessage ml msg = writeTBChan (runMlist ml) msg
 
-popMessage :: MonadIO m => Mlist m Message -> m Message
-popMessage ml = do
-  l <- runMlist ml
-  liftIO $ atomically $ readTBChan l
+readMessage :: Mlist Message -> STM Message
+readMessage ml = readTBChan (runMlist ml)
+
+writeRead :: Message -> IO ()
+writeRead m = do
+  msg <-
+    atomically $ do
+      ml <- createMlist
+      addMessage ml m
+      readMessage ml
+  putStrLn (show msg)
 
 class HasMlist a where
-  addMsg :: MonadIO m => Mlist m a -> a -> m ()
-  readMsg :: MonadIO m => Mlist m a -> m a
+  addMsg :: MonadIO m => Mlist a -> a -> m ()
+  readMsg :: MonadIO m => Mlist a -> m a
 
-instance Monad m => HasMlist (Mlist m a) where
-  addMsg ml msg = do
-    l <- runMlist ml
-    liftIO (atomically $ writeTBChan l msg)
-
-  readMsg ml = do
-    l <- runMlist ml
-    liftIO (atomically $ readTBChan l)
-
-startMessages :: MonadIO m => Mlist m Message
-startMessages = Mlist $ liftIO (newTBChanIO 1000000 :: IO (TBChan Message))
+instance HasMlist (Mlist a) where
+  addMsg ml msg = liftIO (atomically $ writeTBChan (runMlist ml) msg)
+  readMsg ml    = liftIO (atomically $ readTBChan (runMlist ml))
+--
+createMlist :: STM (Mlist Message)
+createMlist = do
+  chan <- newTBChan 1000000
+  pure $ Mlist chan
 
