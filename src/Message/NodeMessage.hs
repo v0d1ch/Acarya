@@ -3,7 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 
-module Message.Message where
+module Message.NodeMessage where
 
 import Control.Concurrent.STM.TBChan
 import Data.Aeson hiding (Error)
@@ -25,25 +25,25 @@ instance FromJSON Severity where
     String "Error" -> return Error
     val -> typeMismatch "Severity" val
 
-data Message =
-  Message
-  { messageBody :: Text
-  , messageSeverity :: Severity
+data NodeMessage =
+  NodeMessage
+  { nodeMessageBody :: Text
+  , nodeMessageSeverity :: Severity
   } deriving (Eq, Show)
 
-instance ToJSON Message where
-  toJSON Message {..} =
+instance ToJSON NodeMessage where
+  toJSON NodeMessage {..} =
     object
-      [ "messageBody" .= messageBody
-      , "messageSeverity" .= messageSeverity
+      [ "nodeMessageBody" .= nodeMessageBody
+      , "nodeMessageSeverity" .= nodeMessageSeverity
       ]
 
-instance FromJSON Message where
+instance FromJSON NodeMessage where
   parseJSON =
-    withObject "Message" $ \o ->
-      Message
-      <$> o .: "messageBody"
-      <*> o .: "messageSeverity"
+    withObject "NodeMessage" $ \o ->
+      NodeMessage
+      <$> o .: "nodeMessageBody"
+      <*> o .: "nodeMessageSeverity"
 
 newtype Mlist a = Mlist { runMlist :: TBChan a }
 
