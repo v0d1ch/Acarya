@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE TupleSections     #-}
 
 module Server.Server where
 
@@ -9,8 +10,7 @@ import Control.Concurrent.STM
 import Control.Concurrent.STM.TBChan
 import Control.Monad (forever, void)
 import Control.Monad.IO.Class (liftIO, MonadIO)
-import Data.Text (Text)
-import Message.NodeMessage
+import Message.Types
 import Network.Wai.Handler.Warp as Warp
 import Servant
 import Server.Api
@@ -24,12 +24,12 @@ server mlist =
   where
     addMessagePostH msg = liftIO $ messagePost mlist msg
 
-    messagePost :: STM (Mlist NodeMessage) -> Text -> IO Bool
+    messagePost :: STM (Mlist NodeMessage) -> String -> IO Bool
     messagePost ml msg = do
       chan <-
         atomically $ do
           channel <- ml
-          void $ addMessage channel (NodeMessage msg Info)
+          void $ addMessage channel (NodeMessage Server msg Info)
           pure channel
       runner chan
       pure True
@@ -67,3 +67,20 @@ runner :: Mlist NodeMessage -> IO ()
 runner ml = void $ async $ forever $ do
   msg <- atomically $ readMessage ml -- this is where we send message out
   print msg
+
+test :: IO ()
+test = do
+  transport <- createTransport "127.0.0.1" "4001" ("127.0.0.1",) defaultTCPParameters
+  case transport of
+    Left e -> putStrLn (show e)
+    Right t -> do
+      node <- newLocalNode t initRemoteTable
+      _ <- runProcess node $ do
+        -- get the id of this process
+        self <- getSelfPid
+        send self "Talking to myself"
+        message <- expect :: Process String
+        liftIO $ putStrLn message
+      return ()
+  return ()
+
