@@ -1,3 +1,3 @@
 # Acarya
-Push message server with network discovery
+Push message server.
 

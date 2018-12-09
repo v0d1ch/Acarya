@@ -10,13 +10,10 @@ import Control.Concurrent.STM
 import Control.Concurrent.STM.TBChan
 import Control.Monad (forever, void)
 import Control.Monad.IO.Class (liftIO, MonadIO)
-import Message.Types
+import Types
 import Network.Wai.Handler.Warp as Warp
 import Servant
 import Server.Api
-import Network.Transport.TCP (createTransport, defaultTCPParameters)
-import Control.Distributed.Process
-import Control.Distributed.Process.Node
 
 server :: STM (Mlist NodeMessage) -> Server Api
 server mlist =
@@ -67,20 +64,4 @@ runner :: Mlist NodeMessage -> IO ()
 runner ml = void $ async $ forever $ do
   msg <- atomically $ readMessage ml -- this is where we send message out
   print msg
-
-test :: IO ()
-test = do
-  transport <- createTransport "127.0.0.1" "4001" ("127.0.0.1",) defaultTCPParameters
-  case transport of
-    Left e -> putStrLn (show e)
-    Right t -> do
-      node <- newLocalNode t initRemoteTable
-      _ <- runProcess node $ do
-        -- get the id of this process
-        self <- getSelfPid
-        send self "Talking to myself"
-        message <- expect :: Process String
-        liftIO $ putStrLn message
-      return ()
-  return ()
 
