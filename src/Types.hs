@@ -1,17 +1,12 @@
 module Types where
 
 import Control.Concurrent.STM.TBChan
-
-type ClientName = String
-
-data Sender = Server | Client ClientName
-  deriving (Eq, Show)
+import Data.ByteString (ByteString)
 
 data Severity = Info | Warn | Error deriving (Eq, Show)
 
-data NodeMessage = NodeMessage {
-    nodeMessageSender :: Sender
-  , nodeMessage :: String
+data NodeMessage = NodeMessage
+  { nodeMessage :: ByteString
   , nodeMessageSeverity :: Severity
   } deriving (Eq, Show)
 

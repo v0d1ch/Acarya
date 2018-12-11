@@ -9,11 +9,14 @@ import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TBChan
 import Control.Monad (forever, void)
-import Control.Monad.IO.Class (liftIO, MonadIO)
-import Types
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Data.Text (Text)
+import qualified Data.Text.Encoding as TE
+import qualified Network.Simple.TCP as N
 import Network.Wai.Handler.Warp as Warp
 import Servant
 import Server.Api
+import Types
 
 server :: STM (Mlist NodeMessage) -> Server Api
 server mlist =
@@ -21,12 +24,12 @@ server mlist =
   where
     addMessagePostH msg = liftIO $ messagePost mlist msg
 
-    messagePost :: STM (Mlist NodeMessage) -> String -> IO Bool
+    messagePost :: STM (Mlist NodeMessage) -> Text -> IO Bool
     messagePost ml msg = do
       chan <-
         atomically $ do
           channel <- ml
-          void $ addMessage channel (NodeMessage Server msg Info)
+          void $ addMessage channel (NodeMessage (TE.encodeUtf8 msg) Info)
           pure channel
       runner chan
       pure True
@@ -62,6 +65,20 @@ createMlist = do
 
 runner :: Mlist NodeMessage -> IO ()
 runner ml = void $ async $ forever $ do
-  msg <- atomically $ readMessage ml -- this is where we send message out
-  print msg
+  void $ atomically $ readMessage ml
+  return ()
+
+spawnAcarya :: MonadIO m => Mlist NodeMessage -> m ()
+spawnAcarya ml = do
+  void $ liftIO (putStrLn "Launching Acarya push server...")
+  N.serve (N.Host "127.0.0.1") "8888" $ \(socket, _remoteAddr) ->
+    void $ async $ forever $ do
+      msg <- atomically $ readMessage ml -- this is where we send message out
+      -- print (nodeMessage msg)
+      N.send socket (nodeMessage msg)
+
+spawnClient :: MonadIO m => m ()
+spawnClient =
+  liftIO $ N.connect "127.0.0.1" "8888" $ \(_connectionSocket, remoteAddr) -> do
+    putStrLn $ "Connection established to " ++ show remoteAddr
 
