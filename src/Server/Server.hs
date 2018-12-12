@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
-{-# LANGUAGE TupleSections     #-}
 
 module Server.Server where
 
@@ -10,13 +9,12 @@ import Control.Concurrent.STM
 import Control.Concurrent.STM.TBChan
 import Control.Monad (forever, void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Text (Text)
-import qualified Data.Text.Encoding as TE
 import qualified Network.Simple.TCP as N
 import Network.Wai.Handler.Warp as Warp
 import Servant
 import Server.Api
 import Types
+import qualified Data.Binary as B
 
 server :: STM (Mlist NodeMessage) -> Server Api
 server mlist =
@@ -24,12 +22,12 @@ server mlist =
   where
     addMessagePostH msg = liftIO $ messagePost mlist msg
 
-    messagePost :: STM (Mlist NodeMessage) -> Text -> IO Bool
+    messagePost :: STM (Mlist NodeMessage) -> String -> IO Bool
     messagePost ml msg = do
       chan <-
         atomically $ do
           channel <- ml
-          void $ addMessage channel (NodeMessage (TE.encodeUtf8 msg) Info)
+          void $ addMessage channel (NodeMessage (B.encode msg) Info)
           pure channel
       runner chan
       pure True
@@ -42,7 +40,6 @@ mkApp = pure app
 
 run :: IO ()
 run = Warp.run 4000 =<< mkApp
-
 
 addMessage :: Mlist NodeMessage -> NodeMessage -> STM ()
 addMessage ml = writeTBChan (runMlist ml)
@@ -75,10 +72,10 @@ spawnAcarya ml = do
     void $ async $ forever $ do
       msg <- atomically $ readMessage ml -- this is where we send message out
       -- print (nodeMessage msg)
-      N.send socket (nodeMessage msg)
+      N.sendLazy socket (nodeMessage msg)
 
 spawnClient :: MonadIO m => m ()
 spawnClient =
-  liftIO $ N.connect "127.0.0.1" "8888" $ \(_connectionSocket, remoteAddr) -> do
+  liftIO $ N.connect "127.0.0.1" "8888" $ \(_connectionSocket, remoteAddr) ->
     putStrLn $ "Connection established to " ++ show remoteAddr
 

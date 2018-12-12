@@ -1,7 +1,7 @@
 module Types where
 
 import Control.Concurrent.STM.TBChan
-import Data.ByteString (ByteString)
+import Data.ByteString.Lazy (ByteString)
 
 data Severity = Info | Warn | Error deriving (Eq, Show)
 
