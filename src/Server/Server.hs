@@ -4,32 +4,56 @@
 
 module Server.Server where
 
+import Control.Concurrent (forkIO)
 import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Control.Concurrent.STM.TBChan
+import qualified Control.Error as ER
 import Control.Monad (forever, void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.Trans.Maybe (runMaybeT)
+import qualified Data.Binary as B
 import qualified Network.Simple.TCP as N
 import Network.Wai.Handler.Warp as Warp
 import Servant
 import Server.Api
 import Types
-import qualified Data.Binary as B
 
 server :: STM (Mlist NodeMessage) -> Server Api
 server mlist =
+  spawnPostH :<|>
   addMessagePostH
   where
+    spawnPostH h p = liftIO $ spawnPost h p mlist
     addMessagePostH msg = liftIO $ messagePost mlist msg
+
+    spawnPost
+      :: Maybe N.HostName
+      -> Maybe N.ServiceName
+      -> STM (Mlist NodeMessage)
+      -> IO Bool
+    spawnPost mhost msname ml = do
+      serverVars <-
+        runMaybeT $ do
+          h <- ER.hoistMaybe mhost
+          n <- ER.hoistMaybe msname
+          return (h, n)
+      case serverVars of
+        Nothing -> return False
+        Just (host, sname) -> do
+          chan <- atomically $ do
+            channel <- ml
+            return channel
+          void $ forkIO $ spawnAcarya host sname chan
+          pure True
 
     messagePost :: STM (Mlist NodeMessage) -> String -> IO Bool
     messagePost ml msg = do
-      chan <-
+      void $
         atomically $ do
           channel <- ml
           void $ addMessage channel (NodeMessage (B.encode msg) Info)
           pure channel
-      runner chan
       pure True
 
 app :: Application
@@ -60,22 +84,22 @@ createMlist = do
   chan <- newTBChan 1000000
   pure $ Mlist chan
 
-runner :: Mlist NodeMessage -> IO ()
-runner ml = void $ async $ forever $ do
-  void $ atomically $ readMessage ml
-  return ()
-
-spawnAcarya :: MonadIO m => Mlist NodeMessage -> m ()
-spawnAcarya ml = do
+spawnAcarya :: MonadIO m => N.HostName -> N.ServiceName -> Mlist NodeMessage -> m ()
+spawnAcarya host sname ml = do
   void $ liftIO (putStrLn "Launching Acarya push server...")
-  N.serve (N.Host "127.0.0.1") "8888" $ \(socket, _remoteAddr) ->
+  N.serve (N.Host host) sname $ \(socket, _remoteAddr) ->
     void $ async $ forever $ do
       msg <- atomically $ readMessage ml -- this is where we send message out
-      -- print (nodeMessage msg)
+      print (nodeMessage msg)
       N.sendLazy socket (nodeMessage msg)
 
-spawnClient :: MonadIO m => m ()
-spawnClient =
-  liftIO $ N.connect "127.0.0.1" "8888" $ \(_connectionSocket, remoteAddr) ->
+spawnClient
+  :: MonadIO m
+  => N.HostName -> N.ServiceName -> m ()
+spawnClient host sname =
+  liftIO $
+  N.connect host sname $ \(socket, remoteAddr) -> do
     putStrLn $ "Connection established to " ++ show remoteAddr
+    mmsg <- N.recv socket 1000
+    print mmsg
 

@@ -40,6 +40,7 @@ library
                      , warp-tls
                      , aeson
                      , network-simple
+                     , errors
   hs-source-dirs:      src
   ghc-options: -Wall -Werror -Wredundant-constraints -Wmissing-monadfail-instances
   default-extensions: LambdaCase OverloadedStrings RecordWildCards
